@@ -8,16 +8,14 @@ import os
 import sys
 import time
 import serial
+import webbrowser
 
-# Add parent directory to path to import from src
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.detection import DetectionSystem
 
-# Configuration constants
 STABILITY_FRAMES_REQUIRED = 3
 
-# Serial Communication Configuration
 SERIAL_PORT = "COM4"
 BAUD_RATE = 115200
 SERIAL_COMMANDS = {
@@ -27,10 +25,14 @@ SERIAL_COMMANDS = {
 }
 
 class SerialComm:
-    def __init__(self):
+    def __init__(self, enabled=True):
         self.ser = None
         self.connected = False
-        self._initialize()
+        self.enabled = enabled
+        if self.enabled:
+            self._initialize()
+        else:
+            print("Serial communication disabled (display only mode)")
     
     def _initialize(self):
         print("Initializing serial connection...")
@@ -78,10 +80,11 @@ class SerialComm:
             print("Serial connection closed")
 
 class SmartBinGUI:
-    def __init__(self, root, detection_system, serial_comm):
+    def __init__(self, root, detection_system, serial_comm, use_microcontroller):
         self.root = root
         self.detection_system = detection_system
         self.serial_comm = serial_comm
+        self.use_microcontroller = use_microcontroller
         self.running = False
         self.cap = None
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -113,18 +116,15 @@ class SmartBinGUI:
         main_frame = tk.Frame(self.root, bg="#f0fff4")
         main_frame.pack(fill=tk.BOTH, expand=True, padx=25, pady=25)
         
-        # Video frame with modern styling
         video_frame = tk.Frame(main_frame, bg="#e6ffed", bd=0, relief=tk.FLAT)
         video_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
         
-        # Add subtle border effect
         video_border = tk.Frame(video_frame, bg="#48bb78", bd=0)
         video_border.pack(fill=tk.BOTH, expand=True, padx=3, pady=3)
         
         self.video_label = tk.Label(video_border, bg="#e6ffed")
         self.video_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Button frame at bottom of video frame
         button_frame = tk.Frame(video_frame, bg="#e6ffed")
         button_frame.pack(fill=tk.X, padx=10, pady=10)
         
@@ -138,20 +138,16 @@ class SmartBinGUI:
         self.capture_button = self.create_modern_button(button_frame, "Capture Image", "#ecc94b", self.capture_image)
         self.capture_button.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
         
-        # Info frame with modern styling
         info_frame = tk.Frame(main_frame, bg="#e6ffed", bd=0, relief=tk.FLAT, width=450)
         info_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(15, 0))
         
-        # Modern title with gradient-like effect
         title_label = tk.Label(info_frame, text="Detection Info", 
                               font=("Segoe UI", 20, "bold"), bg="#e6ffed", fg="#2f855a")
         title_label.pack(pady=(25, 20))
         
-        # Add separator line
         separator = tk.Frame(info_frame, bg="#48bb78", height=2)
         separator.pack(fill=tk.X, padx=20, pady=(0, 20))
         
-        # Modern info cards
         self.create_modern_info_card(info_frame, "Detected", "object_label", "#2f855a")
         self.create_modern_info_card(info_frame, "Category", "category_label", "#2f855a")
         self.create_modern_info_card(info_frame, "Decision Source", "source_label", "#2f855a")
@@ -159,24 +155,26 @@ class SmartBinGUI:
         self.create_modern_info_card(info_frame, "Serial Status", "serial_label", "#2f855a")
         self.create_modern_info_card(info_frame, "Status", "status_label", "#2f855a")
         
-        # Model status indicator
         model_frame = tk.Frame(info_frame, bg="#e6ffed")
         model_frame.pack(pady=15)
         
         self.model_status_label = tk.Label(model_frame, text="Model: Custom YOLO",
                                           font=("Segoe UI", 10, "bold"), bg="#e6ffed", fg="#48bb78")
         self.model_status_label.pack()
+        
+        mode_text = "Microcontroller" if self.use_microcontroller else "Display Only"
+        self.mode_status_label = tk.Label(model_frame, text=f"Mode: {mode_text}",
+                                          font=("Segoe UI", 10, "bold"), bg="#e6ffed", fg="#48bb78")
+        self.mode_status_label.pack(pady=(5, 0))
     
     def create_modern_info_card(self, parent, title, label_name, accent_color):
         card_frame = tk.Frame(parent, bg="#c6f6d5", bd=0, relief=tk.FLAT)
         card_frame.pack(fill=tk.X, padx=20, pady=8)
         
-        # Title with modern styling
         title_label = tk.Label(card_frame, text=title, font=("Segoe UI", 9, "bold"), 
                               bg="#c6f6d5", fg="#2f855a", width=15, anchor=tk.W)
         title_label.pack(anchor=tk.W, padx=12, pady=(8, 2))
         
-        # Value with modern styling
         value_label = tk.Label(card_frame, text="--", font=("Segoe UI", 14, "bold"), 
                               bg="#c6f6d5", fg="#276749", anchor=tk.W, width=20)
         value_label.pack(anchor=tk.W, padx=12, pady=(2, 8))
@@ -219,7 +217,6 @@ class SmartBinGUI:
         self.start_button.config(state=tk.NORMAL)
         self.stop_button.config(state=tk.DISABLED)
         
-        # Reset all variables to initial state
         self.stability_counter = 0
         self.last_detected_category = None
         self.last_decision_time = 0
@@ -235,7 +232,6 @@ class SmartBinGUI:
         self.internet_connected = False
         self.last_internet_check = 0
         
-        # Reset GUI display to initial state
         self.object_label.config(text="--")
         self.category_label.config(text="--")
         self.source_label.config(text="--")
@@ -256,39 +252,31 @@ class SmartBinGUI:
         
         self.capturing = True
         
-        # Reset retry timer at the start of each capture to ensure independence
         self.no_detection_start_time = 0
         
         ret, frame = self.cap.read()
         if ret:
-            # Create captures folder if it doesn't exist
             capture_folder = os.path.join(self.base_dir, "captures")
             os.makedirs(capture_folder, exist_ok=True)
             
-            # Save image with timestamp
             timestamp = int(time.time())
             capture_path = os.path.join(capture_folder, f"capture_{timestamp}.jpg")
             cv2.imwrite(capture_path, frame)
             print(f"Image captured: {capture_path}")
             
-            # Run detection and classification on captured image
             detection_result = self.detection_system.detect(frame)
             print(f"Detection result: {detection_result}")
             
-            # Store updated detection result
             self.last_detection_result = detection_result.copy()
             
-            # Send command if category determined
             if detection_result["current_category"]:
                 success = self.serial_comm.send_command(detection_result["current_category"])
                 if success:
                     print(f"Serial command sent: {detection_result['current_category']}")
             
-            # Track last processed object to prevent re-detection
             self.last_processed_object = detection_result["best_class"]
             self.last_processed_time = time.time()
             
-            # Force GUI update to show capture result immediately
             current_time = cv2.getTickCount() / cv2.getTickFrequency()
             self.update_gui(frame, detection_result, False, current_time)
         else:
@@ -304,9 +292,8 @@ class SmartBinGUI:
             
             self.frame_count += 1
             current_time = cv2.getTickCount() / cv2.getTickFrequency()
-            in_cooldown = False  # Cooldown removed
+            in_cooldown = False
             
-            # Check if servo has returned to initial position
             if self.processing:
                 done_signal = self.serial_comm.read_done_signal()
                 if done_signal:
@@ -314,18 +301,13 @@ class SmartBinGUI:
                     self.last_detection_result = None
                     print("Servo returned to initial position, system ready")
             
-            # Only process if not currently processing
             if not self.processing:
-                # Run detection every 3 frames to improve performance
                 if self.frame_count % 3 == 0:
                     detection_result = self.detection_system.detect(frame, in_cooldown)
                     
-                    # Check stability for 3 frames (frame-based)
                     if detection_result["best_class"] and not in_cooldown:
-                        # Prevent re-detection of the same object immediately after processing
                         if (detection_result["best_class"] == self.last_processed_object and 
                             (current_time - self.last_processed_time) < 2.0):
-                            # Same object processed recently, skip
                             self.stability_counter = 0
                         elif detection_result["best_class"] == self.last_detected_category:
                             self.stability_counter += 1
@@ -333,33 +315,25 @@ class SmartBinGUI:
                             self.stability_counter = 1
                             self.last_detected_category = detection_result["best_class"]
                         
-                        # After stability is confirmed (3 frames), capture image and make decision
                         if self.stability_counter >= STABILITY_FRAMES_REQUIRED:
-                            # Create detection folder if it doesn't exist
                             detection_folder = os.path.join(self.base_dir, "detections")
                             os.makedirs(detection_folder, exist_ok=True)
                             
-                            # Capture image
                             capture_path = os.path.join(detection_folder, f"detection_{int(current_time)}.jpg")
                             cv2.imwrite(capture_path, frame)
                             print(f"Image captured: {capture_path}")
                             print(f"YOLO Confidence: {detection_result['best_confidence']:.2f}")
                             
-                            # Set processing status
                             self.processing = True
                             
-                            # Reset stability counter
                             self.stability_counter = 0
                             self.last_detected_category = None
                             
-                            # Update detection result with decision info
                             detection_result["decision_source"] = f"Automatic - Custom YOLO Model"
                             
-                            # Track last processed object to prevent re-detection
                             self.last_processed_object = detection_result["best_class"]
                             self.last_processed_time = current_time
                             
-                            # Store updated detection result to hold info while processing
                             self.last_detection_result = detection_result.copy()
                             
                             if detection_result["current_category"]:
@@ -369,17 +343,14 @@ class SmartBinGUI:
                                     self.stability_counter = 0
                                     self.last_detected_category = None
                             else:
-                                # No detection - wait 3 seconds and restart
                                 detection_result["decision_source"] = "No Detection - Waiting 3 seconds to restart"
                                 print("No detection in automatic mode")
                                 print("Waiting 3 seconds to restart...")
                                 time.sleep(3)
-                                # Reset to start again
                                 self.stability_counter = 0
                                 self.last_detected_category = None
                                 self.processing = False
                 else:
-                    # Use last detection result for skipped frames
                     detection_result = {
                         "best_class": None,
                         "best_confidence": 0.0,
@@ -388,7 +359,6 @@ class SmartBinGUI:
                         "decision_source": "None"
                     }
             else:
-                # Show stored detection result while processing (keep actual decision source)
                 if self.last_detection_result:
                     detection_result = self.last_detection_result.copy()
                 else:
@@ -410,20 +380,17 @@ class SmartBinGUI:
             return False
 
     def update_gui(self, frame, detection_result, in_cooldown, current_time):
-        # Draw bounding box if available (keep visible during processing)
         if detection_result["best_box"] is not None:
             x1, y1, x2, y2 = map(int, detection_result["best_box"])
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 3)
         
-        # Draw internet status indicator (green/red dot in top right)
         if self.internet_connected:
-            cv2.circle(frame, (620, 20), 10, (0, 255, 0), -1)  # Green dot
+            cv2.circle(frame, (620, 20), 10, (0, 255, 0), -1)
         else:
-            cv2.circle(frame, (620, 20), 10, (0, 0, 255), -1)  # Red dot
+            cv2.circle(frame, (620, 20), 10, (0, 0, 255), -1)
         
-        # Draw API connection status indicator (blue dot next to internet)
         if self.api_connected:
-            cv2.circle(frame, (640, 20), 10, (255, 0, 0), -1)  # Blue dot
+            cv2.circle(frame, (640, 20), 10, (255, 0, 0), -1)
         
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         frame_resized = cv2.resize(frame_rgb, (640, 480))
@@ -438,7 +405,6 @@ class SmartBinGUI:
         cat_text = detection_result["current_category"] if detection_result["current_category"] else "None"
         source_text = detection_result["decision_source"]
         
-        # Calculate stability in frames
         if self.last_detected_category:
             stab_text = f"{min(self.stability_counter, STABILITY_FRAMES_REQUIRED)}/{STABILITY_FRAMES_REQUIRED} frames"
         else:
@@ -452,7 +418,6 @@ class SmartBinGUI:
             self.internet_connected = self.check_internet_connection()
             self.last_internet_check = current_time
         
-        # Batch all GUI updates into a single call
         def update_all():
             self.object_label.config(text=obj_text)
             self.category_label.config(text=cat_text)
@@ -481,16 +446,165 @@ class SmartBinGUI:
         self.serial_comm.close()
 
 
+def show_info_dialog():
+    info_window = tk.Toplevel()
+    info_window.title("Project Info")
+    info_window.geometry("700x600")
+    info_window.configure(bg="#f0fff4")
+    
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    text_frame = tk.Frame(info_window, bg="#f0fff4")
+    text_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+    
+    info_text = tk.Text(text_frame, font=("Segoe UI", 10), bg="#f0fff4", fg="#276749",
+                        wrap=tk.WORD, bd=0, highlightthickness=0)
+    info_text.pack(fill=tk.BOTH, expand=True)
+    
+    info_content = """
+SMARTBIN - Automatic Waste Sorter
+=================================
+
+Dataset:
+--------
+Source: Roboflow
+Link: https://app.roboflow.com/michael-juferson-balla-tangkilisan/klasifikasi-sampah-sdtpy-09cl3/browse?queryText=&pageSize=50&startingIndex=0&browseQuery=true
+
+Classes:
+- Organik (Organic waste)
+- Nonorganik (Non-organic waste)
+- Sampah Berbahaya (Hazardous waste)
+
+Model:
+------
+Architecture: YOLOv8n (Nano)
+Framework: Ultralytics
+Training: Custom trained on waste classification dataset
+
+Evaluation:
+"""
+    
+    try:
+        results_csv = os.path.join(base_dir, "runs", "waste_classification", "results.csv")
+        if os.path.exists(results_csv):
+            info_content += "\nEvaluation results available in: runs/waste_classification/results.csv\n"
+        else:
+            info_content += "\nRun 'python src/main.py --mode evaluate' to generate evaluation results\n"
+    except:
+        info_content += "\nRun 'python src/main.py --mode evaluate' to generate evaluation results\n"
+    
+    info_content += """
+Usage:
+------
+GUI Application: python app/app.py
+Training Pipeline: python src/main.py
+
+Modes:
+- Microcontroller (With Arduino): Sends serial commands to control servo motors
+- Display Only (Without Arduino): Display detection results only
+
+Configuration:
+--------------
+Confidence Threshold: 0.7 (70%)
+Stability Frames Required: 3
+Serial Port: COM4
+Baud Rate: 115200
+"""
+    
+    info_text.insert(tk.END, info_content)
+    info_text.config(state=tk.DISABLED)
+    
+    close_button = tk.Button(info_window, text="Close", font=("Segoe UI", 11, "bold"),
+                             bg="#48bb78", fg="white", activebackground="#38a169",
+                             activeforeground="white", relief=tk.FLAT,
+                             cursor="hand2", padx=30, pady=10,
+                             command=info_window.destroy,
+                             bd=0, highlightthickness=0)
+    close_button.pack(pady=10)
+
+
+def select_mode():
+    dialog = tk.Tk()
+    dialog.title("Select Mode")
+    dialog.geometry("500x350")
+    dialog.configure(bg="#f0fff4")
+    
+    dialog.update_idletasks()
+    width = dialog.winfo_width()
+    height = dialog.winfo_height()
+    x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+    y = (dialog.winfo_screenheight() // 2) - (height // 2)
+    dialog.geometry(f'{width}x{height}+{x}+{y}')
+    
+    selected_mode = [None]
+    
+    def on_microcontroller():
+        selected_mode[0] = True
+        dialog.destroy()
+    
+    def on_display_only():
+        selected_mode[0] = False
+        dialog.destroy()
+    
+    def on_info():
+        show_info_dialog()
+    
+    title_label = tk.Label(dialog, text="SMARTBIN - Mode Selection",
+                          font=("Segoe UI", 18, "bold"), bg="#f0fff4", fg="#2f855a")
+    title_label.pack(pady=(30, 20))
+    
+    desc_label = tk.Label(dialog, text="Select output mode for the application:",
+                          font=("Segoe UI", 11), bg="#f0fff4", fg="#276749")
+    desc_label.pack(pady=(0, 20))
+    
+    button_frame = tk.Frame(dialog, bg="#f0fff4")
+    button_frame.pack(pady=10)
+    
+    mcu_button = tk.Button(button_frame, text="Microcontroller\n(With Arduino)",
+                          font=("Segoe UI", 11, "bold"),
+                          bg="#48bb78", fg="white", activebackground="#38a169",
+                          activeforeground="white", relief=tk.FLAT,
+                          cursor="hand2", padx=25, pady=12, command=on_microcontroller,
+                          bd=0, highlightthickness=0, width=18)
+    mcu_button.pack(side=tk.LEFT, padx=8)
+    
+    display_button = tk.Button(button_frame, text="Display Only\n(Without Arduino)",
+                              font=("Segoe UI", 11, "bold"),
+                              bg="#ecc94b", fg="white", activebackground="#d69e2e",
+                              activeforeground="white", relief=tk.FLAT,
+                              cursor="hand2", padx=25, pady=12, command=on_display_only,
+                              bd=0, highlightthickness=0, width=18)
+    display_button.pack(side=tk.LEFT, padx=8)
+    
+    info_button = tk.Button(dialog, text="Project Info",
+                           font=("Segoe UI", 10, "bold"),
+                           bg="#4299e1", fg="white", activebackground="#3182ce",
+                           activeforeground="white", relief=tk.FLAT,
+                           cursor="hand2", padx=20, pady=8, command=on_info,
+                           bd=0, highlightthickness=0)
+    info_button.pack(pady=15)
+    
+    dialog.mainloop()
+    
+    return selected_mode[0]
+
+
 def main():
+    use_microcontroller = select_mode()
+    
+    if use_microcontroller is None:
+        print("No mode selected, exiting...")
+        return
+    
     print("Initializing detection system...")
     from src.detection import DetectionSystem
     detection_system = DetectionSystem()
     
     print("Initializing serial communication...")
-    serial_comm = SerialComm()
+    serial_comm = SerialComm(enabled=use_microcontroller)
     
     root = tk.Tk()
-    gui = SmartBinGUI(root, detection_system, serial_comm)
+    gui = SmartBinGUI(root, detection_system, serial_comm, use_microcontroller)
     
     def on_closing():
         gui.cleanup()

@@ -1,10 +1,9 @@
-"""
-Main pipeline script for SmartBin project.
-This script runs the training and evaluation pipeline.
-"""
+
+import os
+os.environ['PYTORCH_ENABLE_MPS_FALLBACK'] = '0'
+os.environ['TORCH_DISABLE_NVIDIA_TF32'] = '1'
 
 import argparse
-import os
 from ultralytics import YOLO
 import cv2
 import numpy as np
@@ -13,37 +12,30 @@ from convert_coco_to_yolo import convert_coco_to_yolo
 
 
 def train_custom_model():
-    """
-    Train a custom YOLO model on the waste classification dataset
-    """
-    # Get the base directory
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_yaml = os.path.join(base_dir, 'data', 'data.yaml')
     
-    # Load a pre-trained YOLOv8 model (nano version for faster training)
     print("Loading YOLOv8n model...")
     model = YOLO(os.path.join(base_dir, 'models', 'yolov8n.pt'))
     
-    # Train the model
     print("Starting training...")
     results = model.train(
         data=data_yaml,
-        epochs=30,  # Number of training epochs (reduced for faster training)
-        imgsz=416,  # Image size (reduced for faster training)
-        batch=8,    # Batch size (reduced for CPU)
-        device='cpu',  # Use CPU (change to 'cuda' if GPU is available)
+        epochs=30,
+        imgsz=416,
+        batch=8,
+        device='cpu',
         project=base_dir,
         name='runs/waste_classification',
-        patience=5,  # Early stopping patience
+        patience=5,
         save=True,
-        plots=False,  # Disable plots for faster training
+        plots=False,
         verbose=True
     )
     
     print("Training completed!")
     print(f"Best model saved at: {results.save_dir}/weights/best.pt")
     
-    # Validate the model
     print("\nValidating model...")
     metrics = model.val()
     print(f"mAP50: {metrics.box.map50}")
@@ -53,20 +45,14 @@ def train_custom_model():
 
 
 def evaluate_model(model_path=None, data_yaml=None):
-    """
-    Evaluate the trained YOLO model on the test dataset
-    """
-    # Get the base directory
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    # Default paths
     if model_path is None:
         model_path = os.path.join(base_dir, "runs", "waste_classification", "weights", "best.pt")
     
     if data_yaml is None:
         data_yaml = os.path.join(base_dir, 'data', 'data.yaml')
     
-    # Check if model exists
     if not os.path.exists(model_path):
         print(f"Model not found at {model_path}")
         print("Please train the model first using train_custom_model")
@@ -75,9 +61,8 @@ def evaluate_model(model_path=None, data_yaml=None):
     print(f"Loading model from: {model_path}")
     model = YOLO(model_path)
     
-    # Validate the model
     print("\n=== Model Validation ===")
-    metrics = model.val(data=data_yaml)
+    metrics = model.val(data=data_yaml, plots=False)
     
     print(f"\n=== Validation Metrics ===")
     print(f"mAP50: {metrics.box.map50:.4f}")
@@ -85,7 +70,6 @@ def evaluate_model(model_path=None, data_yaml=None):
     print(f"Precision: {metrics.box.mp:.4f}")
     print(f"Recall: {metrics.box.mr:.4f}")
     
-    # Per-class metrics
     print(f"\n=== Per-Class Metrics ===")
     class_names = ['organik', 'nonorganik', 'sampah_berbahaya']
     for i, class_name in enumerate(class_names):
@@ -98,16 +82,13 @@ def evaluate_model(model_path=None, data_yaml=None):
 
 
 def test_on_images(model_path=None, test_images_dir=None):
-    """
-    Test the model on individual images and display results
-    """
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     if model_path is None:
         model_path = os.path.join(base_dir, "runs", "waste_classification", "weights", "best.pt")
     
     if test_images_dir is None:
-        test_images_dir = os.path.join(base_dir, "data", "raw")
+        test_images_dir = os.path.join(base_dir, "data", "yolo_dataset", "test", "images")
     
     if not os.path.exists(model_path):
         print(f"Model not found at {model_path}")
@@ -120,7 +101,6 @@ def test_on_images(model_path=None, test_images_dir=None):
     print(f"Loading model from: {model_path}")
     model = YOLO(model_path)
     
-    # Get test images
     image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
     test_images = []
     for ext in image_extensions:
@@ -128,20 +108,15 @@ def test_on_images(model_path=None, test_images_dir=None):
     
     print(f"\nFound {len(test_images)} test images")
     
-    # Class mapping
     class_mapping = {0: 'organik', 1: 'nonorganik', 2: 'sampah_berbahaya'}
-    
-    # Results summary
     results_summary = defaultdict(int)
     
-    for i, image_name in enumerate(test_images[:10]):  # Test first 10 images
+    for i, image_name in enumerate(test_images[:10]):
         image_path = os.path.join(test_images_dir, image_name)
         print(f"\n[{i+1}/10] Testing: {image_name}")
         
-        # Run inference
         results = model(image_path, verbose=False, conf=0.25)
         
-        # Process results
         for result in results:
             if result.boxes:
                 for box in result.boxes:
@@ -155,7 +130,6 @@ def test_on_images(model_path=None, test_images_dir=None):
                 print("  No detection")
                 results_summary['no_detection'] += 1
     
-    # Print summary
     print(f"\n=== Test Summary ===")
     for class_name, count in results_summary.items():
         print(f"{class_name}: {count}")
@@ -171,6 +145,8 @@ def main():
                         help='Path to data.yaml file')
     parser.add_argument('--test-images-dir', type=str, default=None, 
                         help='Path to test images directory')
+    parser.add_argument('--force-train', action='store_true',
+                        help='Force training even if model already exists')
     
     args = parser.parse_args()
     
@@ -185,10 +161,20 @@ def main():
         print("\nConversion completed!")
     
     if args.mode in ['train', 'all']:
-        print("\n[1/4] Training Model...")
-        print("-"*60)
-        train_custom_model()
-        print("\nTraining completed!")
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        default_model_path = os.path.join(base_dir, "runs", "waste_classification", "weights", "best.pt")
+        
+        if os.path.exists(default_model_path) and not args.force_train:
+            print("\n[1/4] Training Model...")
+            print("-"*60)
+            print(f"Model already exists at: {default_model_path}")
+            print("Skipping training. Use --force-train to retrain.")
+            print("\nTraining skipped!")
+        else:
+            print("\n[1/4] Training Model...")
+            print("-"*60)
+            train_custom_model()
+            print("\nTraining completed!")
     
     if args.mode in ['evaluate', 'all']:
         print("\n[2/4] Evaluating Model...")

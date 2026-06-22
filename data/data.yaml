@@ -1,4 +1,4 @@
-path: data/yolo_dataset
+path: D:\Matkul Kuliah\Semester 6\1Deep Learning\UAS\Smart\data\yolo_dataset
 train: train/images
 val: valid/images
 test: test/images

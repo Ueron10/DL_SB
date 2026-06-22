@@ -38,11 +38,9 @@ runs/
 *.onnx
 *.engine
 
-# Dataset (optional - uncomment if you want to ignore datasets)
-# raw/
-data/yolo_dataset/test/
-data/yolo_dataset/train/
-data/yolo_dataset/valid/
+# Dataset
+data/raw/
+data/yolo_dataset/
 
 
 # Temporary files

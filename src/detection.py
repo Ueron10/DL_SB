@@ -2,15 +2,11 @@ import cv2
 import os
 from ultralytics import YOLO
 
-# Configuration
-YOLO_CONFIDENCE_THRESHOLD = 0.25
-# Use custom trained model path
+YOLO_CONFIDENCE_THRESHOLD = 0.7
 CUSTOM_MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runs", "waste_classification", "weights", "best.pt")
-# Fallback to pre-trained model if custom model doesn't exist
 YOLO_MODEL = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "yolov8n.pt")
 YOLO_MODEL = CUSTOM_MODEL_PATH if os.path.exists(CUSTOM_MODEL_PATH) else YOLO_MODEL
 
-# Custom YOLO class mapping (0: organik, 1: anorganik, 2: b3)
 CUSTOM_CLASS_MAPPING = {
     0: "organik",
     1: "nonorganik",
@@ -40,7 +36,6 @@ class DetectionSystem:
             raise
 
     def get_category_from_class_id(self, class_id):
-        """Map YOLO class ID to waste category"""
         return CUSTOM_CLASS_MAPPING.get(class_id, None)
     
     def detect(self, frame, in_cooldown=False):
@@ -53,7 +48,6 @@ class DetectionSystem:
             "api_error_message": ""
         }
 
-        # Use YOLO for detection and classification (fast, local, real-time)
         yolo_results = self.yolo_model(frame, verbose=False, conf=YOLO_CONFIDENCE_THRESHOLD)
 
         for yolo_result in yolo_results:
@@ -61,7 +55,6 @@ class DetectionSystem:
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
 
-                # Map class ID to category
                 category = self.get_category_from_class_id(class_id)
                 if category is None:
                     continue
