@@ -1,0 +1,7 @@
+path: data/yolo_dataset
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 3
+names: ['organik', 'nonorganik', 'sampah_berbahaya']
