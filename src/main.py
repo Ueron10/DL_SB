@@ -5,10 +5,10 @@ os.environ['TORCH_DISABLE_NVIDIA_TF32'] = '1'
 
 import argparse
 from ultralytics import YOLO
-import cv2
 import numpy as np
 from collections import defaultdict
 from convert_coco_to_yolo import convert_coco_to_yolo
+import matplotlib.pyplot as plt
 
 
 def train_custom_model():
@@ -44,6 +44,116 @@ def train_custom_model():
     return model
 
 
+def create_visualizations(metrics, base_dir):
+    """Create visualization charts for evaluation results"""
+    print("\n=== Creating Visualizations ===")
+    
+    # Create visual folder
+    visual_dir = os.path.join(base_dir, 'visual')
+    os.makedirs(visual_dir, exist_ok=True)
+    
+    # Data dari hasil evaluasi
+    classes = ['Organik', 'Non-Organik', 'Sampah Berbahaya']
+    precision = [float(metrics.box.p[i]) for i in range(3)]
+    recall = [float(metrics.box.r[i]) for i in range(3)]
+    
+    # Dataset distribution
+    dataset_info = {
+        'Organik': {'images': 103, 'instances': 316},
+        'Non-Organik': {'images': 111, 'instances': 123},
+        'Sampah Berbahaya': {'images': 100, 'instances': 323}
+    }
+    
+    # VISUALISASI 1: Precision dan Recall per Kelas (Side by Side)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(len(classes))
+    width = 0.35
+    
+    bars1 = ax.bar(x - width/2, precision, width, label='Precision', color='#3498db', alpha=0.8)
+    bars2 = ax.bar(x + width/2, recall, width, label='Recall', color='#e74c3c', alpha=0.8)
+    
+    ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+    ax.set_title('Precision dan Recall per Kelas Sampah', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(classes)
+    ax.legend(fontsize=11)
+    ax.set_ylim(0, 1.0)
+    ax.grid(axis='y', alpha=0.3)
+    
+    for bars in [bars1, bars2]:
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.4f}',
+                    ha='center', va='bottom', fontsize=10, fontweight='bold')
+    
+    plt.tight_layout()
+    viz_path = os.path.join(visual_dir, 'precision_recall_comparison.png')
+    plt.savefig(viz_path, dpi=300, bbox_inches='tight')
+    print(f"✓ Saved: precision_recall_comparison.png")
+    plt.close()
+    
+    # VISUALISASI 2: Distribusi Dataset
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Distribusi Citra
+    images = [dataset_info[cls]['images'] for cls in classes]
+    colors = ['#2ecc71', '#3498db', '#e74c3c']
+    bars1 = ax1.bar(classes, images, color=colors, alpha=0.8)
+    ax1.set_ylabel('Jumlah Citra', fontsize=12, fontweight='bold')
+    ax1.set_title('Distribusi Citra per Kelas', fontsize=14, fontweight='bold')
+    ax1.grid(axis='y', alpha=0.3)
+    for bar in bars1:
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                 f'{int(height)}',
+                 ha='center', va='bottom', fontsize=11, fontweight='bold')
+    
+    # Distribusi Instances
+    instances = [dataset_info[cls]['instances'] for cls in classes]
+    bars2 = ax2.bar(classes, instances, color=colors, alpha=0.8)
+    ax2.set_ylabel('Jumlah Instances', fontsize=12, fontweight='bold')
+    ax2.set_title('Distribusi Instances per Kelas', fontsize=14, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3)
+    for bar in bars2:
+        height = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2., height,
+                 f'{int(height)}',
+                 ha='center', va='bottom', fontsize=11, fontweight='bold')
+    
+    plt.tight_layout()
+    viz_path = os.path.join(visual_dir, 'dataset_distribution.png')
+    plt.savefig(viz_path, dpi=300, bbox_inches='tight')
+    print(f"✓ Saved: dataset_distribution.png")
+    plt.close()
+    
+    # VISUALISASI 3: Overall Metrics
+    metrics_names = ['mAP50', 'mAP50-95', 'Precision', 'Recall']
+    metrics_values = [float(metrics.box.map50), float(metrics.box.map), 
+                      float(metrics.box.mp), float(metrics.box.mr)]
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars = ax.bar(metrics_names, metrics_values, color=['#9b59b6', '#3498db', '#2ecc71', '#e74c3c'], alpha=0.8)
+    ax.set_ylabel('Score', fontsize=12, fontweight='bold')
+    ax.set_title('Overall Validation Metrics', fontsize=14, fontweight='bold')
+    ax.set_ylim(0, 1.0)
+    ax.grid(axis='y', alpha=0.3)
+    
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.4f}',
+                ha='center', va='bottom', fontsize=11, fontweight='bold')
+    
+    plt.tight_layout()
+    viz_path = os.path.join(visual_dir, 'overall_metrics.png')
+    plt.savefig(viz_path, dpi=300, bbox_inches='tight')
+    print(f"✓ Saved: overall_metrics.png")
+    plt.close()
+    
+    print(f"All visualizations saved to: {visual_dir}")
+
+
 def evaluate_model(model_path=None, data_yaml=None):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
@@ -77,6 +187,9 @@ def evaluate_model(model_path=None, data_yaml=None):
             print(f"{class_name}:")
             print(f"  Precision: {metrics.box.p[i]:.4f}")
             print(f"  Recall: {metrics.box.r[i]:.4f}")
+    
+    # Create visualizations
+    create_visualizations(metrics, base_dir)
     
     return metrics
 
