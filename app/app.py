@@ -411,10 +411,18 @@ class SmartBinGUI:
             if self.processing:
                 done_signal = self.serial_comm.read_done_signal()
                 if done_signal:
+                    print("Arduino DONE signal received - restarting detection from beginning")
+                    self.stability_counter = 0
+                    self.last_detected_category = None
+                    self.last_decision_time = 0
                     self.processing = False
-                    self.cooldown_start_time = current_time
-                    self.auto_detection = False
-                    print("Automatic detection completed. Result displayed. Press SPACE to restart detection.")
+                    self.last_detection_result = None
+                    self.last_processed_object = None
+                    self.last_processed_time = 0
+                    self.no_detection_start_time = 0
+                    self.frame_count = 0
+                    self.auto_detection = True
+                    self.cooldown_start_time = 0
             
             if not self.processing:
                 if self.frame_count % 3 == 0:
